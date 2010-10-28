@@ -244,11 +244,8 @@ static NSMutableDictionary* gNamedCaches = nil;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 - (UIImage*)loadImageFromBundle:(NSString*)URL {
-//  NSString* path = TTPathForBundleResource([URL substringFromIndex:9]);
-//  NSData* data = [NSData dataWithContentsOfFile:path];
-//  return [UIImage imageWithData:data];
-// temp hack for hi-res support
-		return [UIImage imageNamed:[URL substringFromIndex:9]];
+  NSString* path = TTPathForBundleResource([URL substringFromIndex:9]);
+  return [UIImage imageWithContentsOfFile:path];
 }
 
 
@@ -401,15 +398,53 @@ static NSMutableDictionary* gNamedCaches = nil;
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+/**
+ * This method needs to handle urlPaths with and without extensions.
+ * So @"path.png" will resolve to @"path@2x.png" and
+ *    @"path" will resolve to @"path@2x"
+ *
+ * Paths beginning with @"." will not be changed.
+ */
++ (NSString*)doubleImageURLPath:(NSString*)urlPath {
+  if ([[urlPath substringToIndex:1] isEqualToString:@"."]) {
+    return urlPath;
+  }
+
+  // We'd ideally use stringByAppendingPathExtension: in this method, but it seems
+  // to wreck bundle:// urls by replacing them with bundle:/ prefixes. Strange.
+  NSString* pathExtension = [urlPath pathExtension];
+
+  NSString* urlPathWithNoExtension = [urlPath substringToIndex:
+                                      [urlPath length] - [pathExtension length]
+                                      - (([pathExtension length] > 0) ? 1 : 0)];
+
+  urlPath = [urlPathWithNoExtension stringByAppendingString:@"@2x"];
+
+  if ([pathExtension length] > 0) {
+    urlPath = [urlPath stringByAppendingFormat:@".%@", pathExtension];
+  }
+
+  return urlPath;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 - (BOOL)hasImageForURL:(NSString*)URL fromDisk:(BOOL)fromDisk {
   BOOL hasImage = (nil != [_imageCache objectForKey:URL]);
 
   if (!hasImage && fromDisk) {
     if (TTIsBundleURL(URL)) {
       hasImage = [self imageExistsFromBundle:URL];
+      if (!hasImage) {
+        hasImage = [self imageExistsFromBundle:[TTURLCache doubleImageURLPath:URL]];
+      }
 
     } else if (TTIsDocumentsURL(URL)) {
       hasImage = [self imageExistsFromDocuments:URL];
+      if (!hasImage) {
+        hasImage = [self imageExistsFromDocuments:[TTURLCache doubleImageURLPath:URL]];
+      }
+
     }
   }
 
@@ -617,7 +652,7 @@ static NSMutableDictionary* gNamedCaches = nil;
     NSDictionary* attrs = [NSDictionary dictionaryWithObject:invalidDate
       forKey:NSFileModificationDate];
 
-#if __IPHONE_4_0 <= IPHONEOS_DEPLOYMENT_TARGET
+#if __IPHONE_4_0 <= __IPHONE_OS_VERSION_MAX_ALLOWED
     [fm setAttributes:attrs ofItemAtPath:filePath error:nil];
 #else
     [fm changeFileAttributes:attrs atPath:filePath];
@@ -636,7 +671,7 @@ static NSMutableDictionary* gNamedCaches = nil;
   NSDirectoryEnumerator* e = [fm enumeratorAtPath:_cachePath];
   for (NSString* fileName; fileName = [e nextObject]; ) {
     NSString* filePath = [_cachePath stringByAppendingPathComponent:fileName];
-#if __IPHONE_4_0 <= IPHONEOS_DEPLOYMENT_TARGET
+#if __IPHONE_4_0 <= __IPHONE_OS_VERSION_MAX_ALLOWED
     [fm setAttributes:attrs ofItemAtPath:filePath error:nil];
 #else
     [fm changeFileAttributes:attrs atPath:filePath];
